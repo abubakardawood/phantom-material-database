@@ -1,0 +1,14 @@
+sr_no,sample_label,material_composition,elastic_modulus_mean_kPa,elastic_modulus_std_kPa
+1,EF50_0T,Ecoflex 00-50 (A + B + 0% T),152.7,4.8
+2,EF50_12.5T,Ecoflex 00-50 (A + B + 12.5% T),111.1,6.44
+3,EF30_0T,Ecoflex 00-30 (A + B + 0% T),97.26,4.16
+4,EF30_12.5T,Ecoflex 00-30 (A + B + 12.5% T),73.18,1.17
+5,EF10_0T,Ecoflex 00-10 (A + B + 0% T),54.21,2.38
+6,EF10_12.5T,Ecoflex 00-10 (A + B + 12.5% T),37.3,1.28
+7,EF10_25T,Ecoflex 00-10 (A + B + 25% T),27.39,0.79
+8,EF10_37.5T,Ecoflex 00-10 (A + B + 37.5% T),19.37,0.83
+9,EF10_50T,Ecoflex 00-10 (A + B + 50% T),15.52,0.4
+10,EF10_62.5T,Ecoflex 00-10 (A + B + 62.5% T),12.17,0.52
+11,EF10_75T,Ecoflex 00-10 (A + B + 75% T),8.81,0.12
+12,EF10_87.5T,Ecoflex 00-10 (A + B + 87.5% T),7.92,0.26
+13,EF10_100T,Ecoflex 00-10 (A + B + 100% T),5.42,0.77
