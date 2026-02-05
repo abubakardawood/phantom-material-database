@@ -16,3 +16,9 @@ In addition to passive material characterisation, the repository includes an inv
 Within each EcoFlex family, the experimentally observed relationship between thinner concentration and elastic modulus is monotonic. This property enables stable inversion using shape-preserving interpolation, while maintaining strict adherence to experimentally validated behaviour.
 
 A gap-aware policy is incorporated to prevent extrapolation across unvalidated regions of the design space. When a target modulus lies outside the validated range of all silicone families, the framework reports the nearest lower and upper experimentally tested compositions instead of producing unsupported predictions.
+
+
+## License
+
+- The source code in this repository is released under the MIT License.
+- The experimental data and derived datasets are released under the Creative Commons Attribution 4.0 (CC BY 4.0) license.
