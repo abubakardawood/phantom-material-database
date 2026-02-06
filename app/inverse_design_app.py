@@ -12,6 +12,8 @@ from scipy.optimize import brentq
 # -----------------------------
 DATA_PATH = Path("data/processed/phantoms_table.csv")
 FAMILIES_ORDER = ["EF50", "EF30", "EF10"]
+
+# Horizontal reference levels used in the paper figure (kPa)
 GAP_LEVELS_KPA = sorted([111.10, 97.26, 73.18, 54.21])
 
 
@@ -33,12 +35,23 @@ def load_phantoms(csv_path: Path):
     phantoms = []  # (label, family, thinner_pct, E_mean)
     with csv_path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+
+        required_cols = {"sample_label", "elastic_modulus_mean_kPa"}
+        got_cols = set(reader.fieldnames or [])
+        missing = required_cols - got_cols
+        if missing:
+            raise ValueError(f"CSV missing required columns: {sorted(missing)}")
+
         for row in reader:
             label = row["sample_label"].strip()
             family = label.split("_", 1)[0].strip()
             thinner_pct = parse_thinner_from_label(label)
             E_mean = float(row["elastic_modulus_mean_kPa"])
             phantoms.append((label, family, thinner_pct, E_mean))
+
+    if not phantoms:
+        raise ValueError("No rows loaded from phantoms_table.csv")
+
     return phantoms
 
 
@@ -54,6 +67,7 @@ def build_family_models(phantoms):
         t = np.array(d["t"], dtype=float)
         E = np.array(d["E"], dtype=float)
         order = np.argsort(t)
+
         t = t[order]
         E = E[order]
         labels = list(np.array(d["labels"], dtype=object)[order])
@@ -80,7 +94,7 @@ def invert_family(family_model, E_target):
 
 
 def nearest_bounds(all_measured, E_target):
-    # all_measured: sorted list of (E, label, fam, t)
+    # all_measured is sorted list of (E, label, fam, t)
     lower = None
     upper = None
     for E, label, fam, t in all_measured:
@@ -97,13 +111,12 @@ def make_plot(phantoms, families):
 
     fig, ax = plt.subplots(figsize=(8.5, 5.5))
 
-    # y-limits with small margin
     ymin, ymax = float(E_meas.min()), float(E_meas.max())
     pad = 0.05 * (ymax - ymin) if ymax > ymin else 1.0
     ymin_plot, ymax_plot = ymin - pad, ymax + pad
     ax.set_ylim(ymin_plot, ymax_plot)
 
-    # Shade alternating gap bands using the same levels as your paper figure
+    # Shade alternating bands between the chosen modulus levels (visual guide for gaps)
     bounds = [ymin_plot] + GAP_LEVELS_KPA + [ymax_plot]
     for i in range(len(bounds) - 1):
         if i % 2 == 1:
@@ -137,7 +150,7 @@ st.set_page_config(page_title="Phantom Material Designer", layout="wide")
 st.title("Phantom Material Designer")
 st.write(
     "Design a silicone phantom composition from a target elastic modulus using experimentally validated data "
-    "and a gap-aware policy (no extrapolation)."
+    "(no extrapolation across non-validated regions)."
 )
 
 phantoms = load_phantoms(DATA_PATH)
@@ -160,16 +173,6 @@ with left:
         format="%.2f",
     )
 
-    mode = st.radio(
-        "Design mode",
-        ["Auto-select family (if feasible)", "Force a specific family"],
-        index=0,
-    )
-
-    chosen_family = None
-    if mode == "Force a specific family":
-        chosen_family = st.selectbox("Choose family", FAMILIES_ORDER, index=2)
-
     st.subheader("Result")
 
     feasible = [
@@ -178,59 +181,35 @@ with left:
     ]
     feasible_sorted = [f for f in FAMILIES_ORDER if f in feasible]
 
-    if mode == "Force a specific family":
-        fam = chosen_family
-        d = families[fam]
-        if d["Emin"] <= E_target <= d["Emax"]:
+    if feasible_sorted:
+        st.success("Covered by validated data")
+        for fam in feasible_sorted:
+            d = families[fam]
             t_star, E_pred = invert_family(d, E_target)
-            st.success(f"Feasible within {fam}")
-            st.write(f"**Predicted thinner:** {t_star:.2f}%")
-            st.write(f"**Predicted modulus (interp):** {E_pred:.2f} kPa")
-            st.code(
-                f"{fam} (A+B) + {t_star:.2f}% thinner (by weight of A+B)",
-                language="text",
-            )
-        else:
-            st.error(f"{fam} cannot cover {E_target:.2f} kPa (validated range: {d['Emin']:.2f}–{d['Emax']:.2f} kPa)")
-            lower, upper = nearest_bounds(all_measured, E_target)
-            st.write("Nearest validated bounds:")
-            if lower:
-                E, label, fam_l, t = lower
-                st.write(f"- Lower: **{label}** ({fam_l}, {t:.1f}%): **{E:.2f} kPa**")
-            else:
-                st.write("- Lower: none")
-            if upper:
-                E, label, fam_u, t = upper
-                st.write(f"- Upper: **{label}** ({fam_u}, {t:.1f}%): **{E:.2f} kPa**")
-            else:
-                st.write("- Upper: none")
+
+            with st.expander(f"{fam}: predicted recipe", expanded=(fam == feasible_sorted[0])):
+                st.write(f"**Predicted thinner:** {t_star:.2f}%")
+                st.write(f"**Predicted modulus (interp):** {E_pred:.2f} kPa")
+                st.code(
+                    f"{fam} (A+B) + {t_star:.2f}% thinner (by weight of A+B)",
+                    language="text",
+                )
     else:
-        if feasible_sorted:
-            st.success("Covered by validated data")
-            for fam in feasible_sorted:
-                d = families[fam]
-                t_star, E_pred = invert_family(d, E_target)
-                with st.expander(f"{fam}: predicted recipe", expanded=(fam == feasible_sorted[0])):
-                    st.write(f"**Predicted thinner:** {t_star:.2f}%")
-                    st.write(f"**Predicted modulus (interp):** {E_pred:.2f} kPa")
-                    st.code(
-                        f"{fam} (A+B) + {t_star:.2f}% thinner (by weight of A+B)",
-                        language="text",
-                    )
+        st.warning("Target is in a non-validated gap / out of range (no extrapolation).")
+        lower, upper = nearest_bounds(all_measured, E_target)
+
+        st.write("Nearest validated bounds:")
+        if lower:
+            E, label, fam_l, t = lower
+            st.write(f"- Lower: **{label}** ({fam_l}, {t:.1f}%): **{E:.2f} kPa**")
         else:
-            st.warning("Target is in a non-validated gap / out of range (no extrapolation).")
-            lower, upper = nearest_bounds(all_measured, E_target)
-            st.write("Nearest validated bounds:")
-            if lower:
-                E, label, fam_l, t = lower
-                st.write(f"- Lower: **{label}** ({fam_l}, {t:.1f}%): **{E:.2f} kPa**")
-            else:
-                st.write("- Lower: none")
-            if upper:
-                E, label, fam_u, t = upper
-                st.write(f"- Upper: **{label}** ({fam_u}, {t:.1f}%): **{E:.2f} kPa**")
-            else:
-                st.write("- Upper: none")
+            st.write("- Lower: none")
+
+        if upper:
+            E, label, fam_u, t = upper
+            st.write(f"- Upper: **{label}** ({fam_u}, {t:.1f}%): **{E:.2f} kPa**")
+        else:
+            st.write("- Upper: none")
 
 with right:
     st.subheader("Dataset overview")
