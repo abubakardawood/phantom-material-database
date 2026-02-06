@@ -1,30 +1,36 @@
+import csv
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import PchipInterpolator
-from google.colab import files
 from matplotlib.patches import Patch
 
 # Keep text editable in the exported SVG
 plt.rcParams["svg.fonttype"] = "none"
 
-# Phantom dataset: (label, family, thinner %, elastic modulus in kPa)
-PHANTOMS = [
-    ("EF50_0T",    "EF50", 0.0,   152.70),
-    ("EF50_12.5T", "EF50", 12.5,  111.10),
-    ("EF30_0T",    "EF30", 0.0,    97.26),
-    ("EF30_12.5T", "EF30", 12.5,   73.18),
-    ("EF10_0T",    "EF10", 0.0,    54.21),
-    ("EF10_12.5T", "EF10", 12.5,   37.30),
-    ("EF10_25T",   "EF10", 25.0,   27.39),
-    ("EF10_37.5T", "EF10", 37.5,   19.37),
-    ("EF10_50T",   "EF10", 50.0,   15.52),
-    ("EF10_62.5T", "EF10", 62.5,   12.17),
-    ("EF10_75T",   "EF10", 75.0,    8.81),
-    ("EF10_87.5T", "EF10", 87.5,    7.92),
-    ("EF10_100T",  "EF10", 100.0,   5.42),
-]
+# ------------------------------------------------
+# Load phantom data from CSV (Table 1)
+# ------------------------------------------------
+CSV_PATH = "data/processed/phantoms_table.csv"
 
+PHANTOMS = []
+with open(CSV_PATH, newline="", encoding="utf-8") as f:
+    reader = csv.DictReader(f)
+
+    for row in reader:
+        label = row["sample_label"].strip()
+        family = label.split("_")[0]
+
+        # Handle labels like EF10_12.5T or EF10_12_5T
+        thinner_str = label.split("_")[1].replace("T", "").replace("_", ".")
+        thinner_pct = float(thinner_str)
+
+        E_mean = float(row["elastic_modulus_mean_kPa"])
+
+        PHANTOMS.append((label, family, thinner_pct, E_mean))
+
+# ------------------------------------------------
 # Organise data by silicone family for interpolation
+# ------------------------------------------------
 families = {}
 for label, fam, t, E in PHANTOMS:
     families.setdefault(fam, {"t": [], "E": []})
@@ -39,7 +45,9 @@ for fam, d in families.items():
     d["interp"] = PchipInterpolator(d["t"], d["E"], extrapolate=False)
     d["tmin"], d["tmax"] = d["t"].min(), d["t"].max()
 
-# --- Plot setup ---
+# ------------------------------------------------
+# Plot
+# ------------------------------------------------
 plt.figure(figsize=(9, 6))
 
 t_meas = np.array([p[2] for p in PHANTOMS])
@@ -90,8 +98,15 @@ plt.legend(handles, labels_)
 
 plt.tight_layout()
 
-# Save and download the figure
+# ------------------------------------------------
+# Save and download safely (Colab / local)
+# ------------------------------------------------
 out_path = "Inverse_with_gap_shading.svg"
 plt.savefig(out_path, format="svg", bbox_inches="tight")
 plt.show()
-files.download(out_path)
+
+try:
+    from google.colab import files
+    files.download(out_path)
+except Exception:
+    print(f"Figure saved to: {out_path}")
