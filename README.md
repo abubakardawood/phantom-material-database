@@ -17,6 +17,17 @@ Within each EcoFlex family, the experimentally observed relationship between thi
 
 A gap-aware policy is incorporated to prevent extrapolation across unvalidated regions of the design space. When a target modulus lies outside the validated range of all silicone families, the framework reports the nearest lower and upper experimentally tested compositions instead of producing unsupported predictions.
 
+## Web App
+
+A browser-based GUI for inverse design is provided as a Streamlit app.
+
+**Deploy (Streamlit Community Cloud):**
+- Repository: this repo
+- Branch: `main`
+- App file: `app/inverse_design_app.py`
+- Requirements: `requirements.txt`
+
+
 
 ## License
 
