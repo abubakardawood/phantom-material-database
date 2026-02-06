@@ -146,6 +146,16 @@ def make_plot(phantoms, families):
 # -----------------------------
 # Streamlit UI
 # -----------------------------
+st.markdown(
+    """
+    **How to use this tool**
+    1. Enter a target elastic modulus (kPa).
+    2. If the target lies within experimentally validated ranges, the tool reports
+       a phantom composition based on monotonic interpolation.
+    3. If the target lies in a non-validated gap, no extrapolation is performed and
+       the nearest validated bounds are reported.
+    """
+)
 st.set_page_config(page_title="Phantom Material Designer", layout="wide")
 st.title("Phantom Material Designer")
 st.write(
