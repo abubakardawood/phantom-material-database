@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+title: "Phantom Material Database and Inverse Design Framework"
+authors:
+  - family-names: Dawood
+    given-names: Abu Bakar
+message: "If you use this software or data, please cite the associated publication."
+journal: "Advanced Healthcare Materials"
+year: 2024
+url: "https://github.com/YOUR_USERNAME/YOUR_REPO"
