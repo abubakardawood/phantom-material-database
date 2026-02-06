@@ -227,3 +227,15 @@ with right:
     fig = make_plot(phantoms, families)
     st.pyplot(fig)
     st.caption("Shaded bands indicate non-validated regions (visual guide).")
+
+st.markdown("---")
+st.markdown(
+    """
+    **Citation**
+
+    If you use this dataset or tool, please cite:  
+    *A. B. Dawood et al., “A Database of Materials for Modeling Human Tissues Across Varying Stiffnesses,”
+    Advanced Healthcare Materials.*
+    """
+)
+
