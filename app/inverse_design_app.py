@@ -146,6 +146,13 @@ def make_plot(phantoms, families):
 # -----------------------------
 # Streamlit UI
 # -----------------------------
+
+st.set_page_config(page_title="Phantom Material Designer", layout="wide")
+st.title("Phantom Material Designer")
+st.write(
+    "Design a silicone phantom composition from a target elastic modulus using experimentally validated data "
+    "(no extrapolation across non-validated regions)."
+)
 st.markdown(
     """
     **How to use this tool**
@@ -155,12 +162,6 @@ st.markdown(
     3. If the target lies in a non-validated gap, no extrapolation is performed and
        the nearest validated bounds are reported.
     """
-)
-st.set_page_config(page_title="Phantom Material Designer", layout="wide")
-st.title("Phantom Material Designer")
-st.write(
-    "Design a silicone phantom composition from a target elastic modulus using experimentally validated data "
-    "(no extrapolation across non-validated regions)."
 )
 
 phantoms = load_phantoms(DATA_PATH)
