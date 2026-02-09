@@ -33,7 +33,7 @@ This design strategy enables controlled fabrication of mechanically equivalent t
 
 ## Data Location
 
-The canonical dataset corresponding to Table 1 of the manuscript is provided at:
+The dataset corresponding to Table 1 of the manuscript is provided at:
 
 data/processed/phantoms_table.csv
 
