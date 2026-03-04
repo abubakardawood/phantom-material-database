@@ -176,9 +176,9 @@ with right:
     # ---- GAP SHADING (updated + correct) ----
     # Use your updated boundary levels (kPa)
     levels = sorted([
-        111.09930866645567,  # EF50_12_5T
-        97.25997744487732,   # EF30_0T
-        73.18310906168253,   # EF30_12_5T
+        # 111.09930866645567,  # EF50_12_5T
+        # 97.25997744487732,   # EF30_0T
+        65.68354113025582,   # EF30_12_5T
         54.20947752233499    # EF10_0T
     ])
 
@@ -211,7 +211,8 @@ with right:
         ax.plot(t_fine, d["interp"](t_fine), label=f"{fam} interpolation", zorder=2)
 
     # show target
-    ax.axhline(E_target, linestyle="--", linewidth=1.2, zorder=2)
+    # ax.axhline(E_target, linestyle="--", linewidth=1.2, zorder=2)
+    
 
     ax.set_xlabel("Thinner concentration (%)")
     ax.set_ylabel("Elastic modulus (kPa)")
