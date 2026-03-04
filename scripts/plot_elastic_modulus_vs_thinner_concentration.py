@@ -1,4 +1,5 @@
 import csv
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import PchipInterpolator
@@ -8,9 +9,36 @@ from matplotlib.patches import Patch
 plt.rcParams["svg.fonttype"] = "none"
 
 # ------------------------------------------------
-# Load phantom data from CSV (Table 1)
+# Load phantom data from CSV (Table)
 # ------------------------------------------------
 CSV_PATH = "data/processed/phantoms_table.csv"
+
+def parse_thinner_pct(label: str) -> float:
+    """
+    Robustly parse thinner percentage from labels like:
+      EF10_12_5T, EF10_12.5T, EF50_0T, EF30_25T, EF10_37_5T
+    """
+    parts = label.strip().split("_")
+    if len(parts) < 2:
+        raise ValueError(f"Cannot parse thinner% from label: {label}")
+
+    # Most common:
+    # EF10_12_5T -> ["EF10","12","5T"]
+    # EF10_12.5T -> ["EF10","12.5T"]
+    # EF50_0T    -> ["EF50","0T"]
+    fam = parts[0]
+    rest = label[len(fam) + 1:]  # everything after "EFxx_"
+
+    # Keep only the first "...T" chunk (some labels may have sample suffixes elsewhere)
+    m = re.search(r"([0-9]+(?:[._][0-9]+)?)T", rest)
+    if m:
+        token = m.group(1).replace("_", ".")
+        return float(token)
+
+    # Fallback for patterns like "12_5T" where regex above might miss in weird cases
+    token = parts[1].replace("T", "").replace("_", ".")
+    return float(token)
+
 
 PHANTOMS = []
 with open(CSV_PATH, newline="", encoding="utf-8") as f:
@@ -20,12 +48,9 @@ with open(CSV_PATH, newline="", encoding="utf-8") as f:
         label = row["sample_label"].strip()
         family = label.split("_")[0]
 
-        # Handle labels like EF10_12.5T or EF10_12_5T
-        thinner_str = label.split("_")[1].replace("T", "").replace("_", ".")
-        thinner_pct = float(thinner_str)
+        thinner_pct = parse_thinner_pct(label)
 
         E_mean = float(row["elastic_modulus_mean_kPa"])
-
         PHANTOMS.append((label, family, thinner_pct, E_mean))
 
 # ------------------------------------------------
@@ -42,19 +67,27 @@ for fam, d in families.items():
     order = np.argsort(d["t"])
     d["t"] = np.array(d["t"], float)[order]
     d["E"] = np.array(d["E"], float)[order]
-    d["interp"] = PchipInterpolator(d["t"], d["E"], extrapolate=False)
-    d["tmin"], d["tmax"] = d["t"].min(), d["t"].max()
+
+    # Only build interpolator if we have enough points
+    if len(d["t"]) >= 2:
+        d["interp"] = PchipInterpolator(d["t"], d["E"], extrapolate=False)
+        d["tmin"], d["tmax"] = float(d["t"].min()), float(d["t"].max())
 
 # ------------------------------------------------
 # Plot
 # ------------------------------------------------
 plt.figure(figsize=(9, 6))
 
-t_meas = np.array([p[2] for p in PHANTOMS])
-E_meas = np.array([p[3] for p in PHANTOMS])
+t_meas = np.array([p[2] for p in PHANTOMS], dtype=float)
+E_meas = np.array([p[3] for p in PHANTOMS], dtype=float)
 
-# Elastic modulus levels separating experimentally validated regions
-levels = sorted([111.10, 97.26, 73.18, 54.21])
+# Updated elastic modulus "gap-policy" reference levels (from your new means)
+levels = sorted([
+    111.09930866645567,   # EF50_12_5T
+    97.25997744487732,    # EF30_0T
+    73.18310906168253,    # EF30_12_5T
+    54.20947752233499     # EF10_0T
+])
 
 # Set y-axis limits with a small margin for clarity
 ymin = float(E_meas.min())
@@ -77,10 +110,10 @@ for y in levels:
 # Plot measured phantom data
 plt.plot(t_meas, E_meas, "o", label="Measured (phantoms)")
 
-# Plot family-wise monotonic interpolations
-for fam in ["EF50", "EF30", "EF10"]:
-    d = families.get(fam)
-    if d and len(d["t"]) > 1:
+# Plot family-wise monotonic interpolations (all families present)
+for fam in sorted(families.keys()):
+    d = families[fam]
+    if "interp" in d:
         t_fine = np.linspace(d["tmin"], d["tmax"], 300)
         plt.plot(t_fine, d["interp"](t_fine), label=f"{fam} interpolation")
 
