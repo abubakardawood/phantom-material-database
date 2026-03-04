@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 from scipy.interpolate import PchipInterpolator
 from scipy.optimize import brentq
+from matplotlib.patches import Patch
 
 
 # -----------------------------
