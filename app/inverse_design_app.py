@@ -1,241 +1,264 @@
-import csv
-from pathlib import Path
-
 import numpy as np
+import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
+
 from scipy.interpolate import PchipInterpolator
 from scipy.optimize import brentq
 
-# -----------------------------
-# Settings
-# -----------------------------
-DATA_PATH = Path("data/processed/phantoms_table.csv")
-FAMILIES_ORDER = ["EF50", "EF30", "EF10"]
 
-# Horizontal reference levels used in the paper figure (kPa)
-GAP_LEVELS_KPA = sorted([111.10, 97.26, 73.18, 54.21])
-
-
-# -----------------------------
-# Helpers
-# -----------------------------
-def parse_thinner_from_label(label: str) -> float:
-    # Handles EF10_12.5T and EF10_12_5T
-    t_part = label.split("_", 1)[1].replace("T", "").replace("_", ".")
-    return float(t_part)
+# =========================
+# Page setup
+# =========================
+st.set_page_config(page_title="Inverse Phantom Design", page_icon="🧪", layout="centered")
+st.title("🧪 Inverse Design for Silicone Phantoms")
+st.caption("Select a target Young’s modulus (kPa). If multiple Ecoflex series overlap, choose the material family.")
 
 
-def load_phantoms(csv_path: Path):
-    if not csv_path.exists():
-        raise FileNotFoundError(
-            f"Missing {csv_path}. Run the app from the repo root so it can find data/processed/phantoms_table.csv."
-        )
+# =========================
+# Data loading
+# =========================
+@st.cache_data
+def load_phantoms_csv(path: str):
+    """
+    Expected columns (case-insensitive):
+      - Sample Label (e.g., EF50_12_5T)
+      - Mean Elastic Modulus (kPa)  OR  Mean Elastic Modulus (kPa)
+      - (optional) Thinner concentration (%) or we infer from label
+      - (optional) Family / Series (EF10 / EF30 / EF50) or inferred from label
+    """
+    df = pd.read_csv(path)
 
-    phantoms = []  # (label, family, thinner_pct, E_mean)
-    with csv_path.open(newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
+    # normalize column names for easier access
+    df.columns = [c.strip() for c in df.columns]
 
-        required_cols = {"sample_label", "elastic_modulus_mean_kPa"}
-        got_cols = set(reader.fieldnames or [])
-        missing = required_cols - got_cols
-        if missing:
-            raise ValueError(f"CSV missing required columns: {sorted(missing)}")
+    # try to find label + modulus columns robustly
+    label_col = None
+    for c in df.columns:
+        if c.lower() in ["sample label", "label", "sample_label"]:
+            label_col = c
+            break
+    if label_col is None:
+        raise ValueError("CSV must contain a 'Sample Label' column.")
 
-        for row in reader:
-            label = row["sample_label"].strip()
-            family = label.split("_", 1)[0].strip()
-            thinner_pct = parse_thinner_from_label(label)
-            E_mean = float(row["elastic_modulus_mean_kPa"])
-            phantoms.append((label, family, thinner_pct, E_mean))
+    mod_col = None
+    for c in df.columns:
+        if "mean" in c.lower() and "modulus" in c.lower():
+            mod_col = c
+            break
+    if mod_col is None:
+        raise ValueError("CSV must contain a mean elastic modulus column (e.g., 'Mean Elastic Modulus (kPa)').")
 
-    if not phantoms:
-        raise ValueError("No rows loaded from phantoms_table.csv")
+    # infer family and thinner % from label if not present
+    labels = df[label_col].astype(str).tolist()
+    families = []
+    thinners = []
 
-    return phantoms
+    for lab in labels:
+        # family: first token like EF50 / EF30 / EF10
+        fam = lab.split("_")[0]
+        families.append(fam)
+
+        # thinner% parsing:
+        # labels like EF50_12_5T or EF10_37_5T or EF30_25T or EF10_0T
+        # Take the token after family, strip trailing 'T', convert '_' to '.'
+        parts = lab.split("_")
+        if len(parts) >= 2:
+            t_token = parts[1]
+            # if label is EF50_12_5T -> parts[1]="12", parts[2]="5T"
+            if len(parts) >= 3 and parts[2].endswith("T"):
+                t_token = parts[1] + "_" + parts[2].replace("T", "")
+            else:
+                t_token = t_token.replace("T", "")
+            t_token = t_token.replace("_", ".")
+            try:
+                t_val = float(t_token)
+            except Exception:
+                t_val = np.nan
+        else:
+            t_val = np.nan
+
+        thinners.append(t_val)
+
+    out = pd.DataFrame({
+        "label": labels,
+        "family": families,
+        "thinner_pct": thinners,
+        "E_kPa": pd.to_numeric(df[mod_col], errors="coerce"),
+    }).dropna(subset=["E_kPa", "thinner_pct"])
+
+    return out
 
 
-def build_family_models(phantoms):
-    families = {}
-    for label, fam, t, E in phantoms:
-        families.setdefault(fam, {"t": [], "E": [], "labels": []})
-        families[fam]["t"].append(float(t))
-        families[fam]["E"].append(float(E))
-        families[fam]["labels"].append(label)
+def fallback_phantoms():
+    # Updated list including EF50_25T and EF30_25T
+    return pd.DataFrame({
+        "label": [
+            "EF50_0T", "EF50_12_5T", "EF50_25T",
+            "EF30_0T", "EF30_12_5T", "EF30_25T",
+            "EF10_0T", "EF10_12_5T", "EF10_25T", "EF10_37_5T",
+            "EF10_50T", "EF10_62_5T", "EF10_75T", "EF10_87_5T", "EF10_100T"
+        ],
+        "family": [
+            "EF50", "EF50", "EF50",
+            "EF30", "EF30", "EF30",
+            "EF10", "EF10", "EF10", "EF10",
+            "EF10", "EF10", "EF10", "EF10", "EF10"
+        ],
+        "thinner_pct": [
+            0.0, 12.5, 25.0,
+            0.0, 12.5, 25.0,
+            0.0, 12.5, 25.0, 37.5,
+            50.0, 62.5, 75.0, 87.5, 100.0
+        ],
+        "E_kPa": [
+            152.70070288580004, 111.09930866645567, 89.49278526799354,
+            97.25997744487732, 73.18310906168253, 65.68354113025582,
+            54.20947752233499, 37.2970482769499, 27.397220287652036, 19.37489905967659,
+            15.5213581416756, 12.174085251987634, 8.814412371336129, 7.915154597748689, 5.422521729130547
+        ]
+    })
 
-    for fam, d in families.items():
-        t = np.array(d["t"], dtype=float)
-        E = np.array(d["E"], dtype=float)
-        order = np.argsort(t)
 
-        t = t[order]
-        E = E[order]
-        labels = list(np.array(d["labels"], dtype=object)[order])
+# =========================
+# Build interpolators
+# =========================
+def build_families(df: pd.DataFrame):
+    fams = {}
+    for fam, sub in df.groupby("family"):
+        sub = sub.sort_values("thinner_pct")
+        t = sub["thinner_pct"].to_numpy(dtype=float)
+        E = sub["E_kPa"].to_numpy(dtype=float)
+        labels = sub["label"].astype(str).tolist()
 
-        d["t"] = t
-        d["E"] = E
-        d["labels"] = labels
-        d["interp"] = PchipInterpolator(t, E, extrapolate=False)
-        d["tmin"], d["tmax"] = float(t.min()), float(t.max())
-        d["Emin"], d["Emax"] = float(E.min()), float(E.max())
+        # Need at least 2 points to interpolate
+        if len(t) < 2:
+            continue
 
-    return families
+        interp = PchipInterpolator(t, E, extrapolate=False)
+
+        fams[fam] = {
+            "t": t,
+            "E": E,
+            "labels": labels,
+            "interp": interp,
+            "tmin": float(np.min(t)),
+            "tmax": float(np.max(t)),
+            "Emin": float(np.min(E)),
+            "Emax": float(np.max(E)),
+        }
+    return fams
 
 
-def invert_family(family_model, E_target):
-    f = family_model["interp"]
+def invert_family(fam_dict, E_target):
+    f = fam_dict["interp"]
 
     def g(t):
         return float(f(t) - E_target)
 
-    t_star = float(brentq(g, family_model["tmin"], family_model["tmax"]))
+    t_star = float(brentq(g, fam_dict["tmin"], fam_dict["tmax"]))
     E_pred = float(f(t_star))
-    return t_star, E_pred
+
+    # nearest measured phantom in that family
+    E_arr = fam_dict["E"]
+    labels = fam_dict["labels"]
+    j = int(np.argmin(np.abs(E_arr - E_target)))
+    nearest_label = labels[j]
+    nearest_E = float(E_arr[j])
+    return t_star, E_pred, nearest_label, nearest_E
 
 
-def nearest_bounds(all_measured, E_target):
-    # all_measured is sorted list of (E, label, fam, t)
+def nearest_bounds(all_measured_sorted, E_target):
     lower = None
     upper = None
-    for E, label, fam, t in all_measured:
+    for E, fam, t, label in all_measured_sorted:
         if E <= E_target:
-            lower = (E, label, fam, t)
+            lower = (E, fam, t, label)
         if E >= E_target and upper is None:
-            upper = (E, label, fam, t)
+            upper = (E, fam, t, label)
     return lower, upper
 
 
-def make_plot(phantoms, families):
-    t_meas = np.array([p[2] for p in phantoms], dtype=float)
-    E_meas = np.array([p[3] for p in phantoms], dtype=float)
+# =========================
+# UI: data source
+# =========================
+with st.expander("Data source", expanded=False):
+    st.write("If you have a CSV in the repo (recommended), point the app to it.")
+    use_csv = st.checkbox("Load phantoms from CSV file", value=True)
+    csv_path = st.text_input("CSV path", value="data/tables/phantoms_elastic_modulus.csv")
 
-    fig, ax = plt.subplots(figsize=(8.5, 5.5))
+if use_csv:
+    try:
+        ph_df = load_phantoms_csv(csv_path)
+    except Exception as e:
+        st.warning(f"Could not load CSV ({e}). Using embedded values instead.")
+        ph_df = fallback_phantoms()
+else:
+    ph_df = fallback_phantoms()
 
-    ymin, ymax = float(E_meas.min()), float(E_meas.max())
-    pad = 0.05 * (ymax - ymin) if ymax > ymin else 1.0
-    ymin_plot, ymax_plot = ymin - pad, ymax + pad
-    ax.set_ylim(ymin_plot, ymax_plot)
-
-    # Shade alternating bands between the chosen modulus levels (visual guide for gaps)
-    bounds = [ymin_plot] + GAP_LEVELS_KPA + [ymax_plot]
-    for i in range(len(bounds) - 1):
-        if i % 2 == 1:
-            ax.axhspan(bounds[i], bounds[i + 1], alpha=0.10)
-
-    for y in GAP_LEVELS_KPA:
-        ax.axhline(y=y, linestyle=":", linewidth=1.2, alpha=0.8)
-
-    ax.plot(t_meas, E_meas, "o", label="Measured (phantoms)")
-
-    for fam in FAMILIES_ORDER:
-        d = families.get(fam)
-        if not d or len(d["t"]) < 2:
-            continue
-        t_fine = np.linspace(d["tmin"], d["tmax"], 300)
-        ax.plot(t_fine, d["interp"](t_fine), label=f"{fam} interpolation")
-
-    ax.set_xlabel("Thinner concentration (%)")
-    ax.set_ylabel("Elastic modulus (kPa)")
-    ax.set_title("Elastic modulus vs thinner concentration")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
-    return fig
-
-
-# -----------------------------
-# Streamlit UI
-# -----------------------------
-
-st.set_page_config(page_title="Phantom Material Designer", layout="wide")
-st.title("Phantom Material Designer")
-st.write(
-    "Design a silicone phantom composition from a target elastic modulus using experimentally validated data "
-    "(no extrapolation across non-validated regions)."
-)
-st.markdown(
-    """
-    **How to use this tool**
-    1. Enter a target elastic modulus (kPa).
-    2. If the target lies within experimentally validated ranges, the tool reports
-       a phantom composition based on monotonic interpolation.
-    3. If the target lies in a non-validated gap, no extrapolation is performed and
-       the nearest validated bounds are reported.
-    """
+families = build_families(ph_df)
+ALL_MEASURED = sorted(
+    [(float(r.E_kPa), r.family, float(r.thinner_pct), r.label) for r in ph_df.itertuples()],
+    key=lambda x: x[0]
 )
 
-phantoms = load_phantoms(DATA_PATH)
-families = build_family_models(phantoms)
+# =========================
+# UI: target input
+# =========================
+st.subheader("Target modulus")
+E_target = st.number_input("Enter target Young’s modulus (kPa)", min_value=0.0, value=50.0, step=1.0)
 
-all_measured = sorted(
-    [(E, label, fam, t) for (label, fam, t, E) in phantoms],
-    key=lambda x: x[0],
-)
+# feasible families
+feasible = [fam for fam, d in families.items() if d["Emin"] <= E_target <= d["Emax"]]
+feasible_sorted = sorted(feasible)
 
-left, right = st.columns([1, 1], gap="large")
+st.divider()
 
-with left:
-    st.subheader("Target specification")
-    E_target = st.number_input(
-        "Target elastic modulus (kPa)",
-        min_value=0.0,
-        value=50.0,
-        step=1.0,
-        format="%.2f",
-    )
+# =========================
+# Main logic + overlapping choice
+# =========================
+if feasible_sorted:
+    st.success("Target is within validated range for at least one material family.")
 
-    st.subheader("Result")
-
-    feasible = [
-        fam for fam, d in families.items()
-        if d["Emin"] <= E_target <= d["Emax"]
-    ]
-    feasible_sorted = [f for f in FAMILIES_ORDER if f in feasible]
-
-    if feasible_sorted:
-        st.success("Covered by validated data")
-        for fam in feasible_sorted:
-            d = families[fam]
-            t_star, E_pred = invert_family(d, E_target)
-
-            with st.expander(f"{fam}: predicted recipe", expanded=(fam == feasible_sorted[0])):
-                st.write(f"**Predicted thinner:** {t_star:.2f}%")
-                st.write(f"**Predicted modulus (interp):** {E_pred:.2f} kPa")
-                st.code(
-                    f"{fam} (A+B) + {t_star:.2f}% thinner (by weight of A+B)",
-                    language="text",
-                )
+    if len(feasible_sorted) > 1:
+        st.write("Multiple families can achieve this modulus (overlapping ranges). Choose one:")
+        chosen_fam = st.selectbox("Material family", feasible_sorted, index=0)
     else:
-        st.warning("Target is in a non-validated gap / out of range (no extrapolation).")
-        lower, upper = nearest_bounds(all_measured, E_target)
+        chosen_fam = feasible_sorted[0]
+        st.info(f"Only one feasible family covers this target: **{chosen_fam}**")
 
-        st.write("Nearest validated bounds:")
-        if lower:
-            E, label, fam_l, t = lower
-            st.write(f"- Lower: **{label}** ({fam_l}, {t:.1f}%): **{E:.2f} kPa**")
-        else:
-            st.write("- Lower: none")
+    fam_dict = families[chosen_fam]
+    t_star, E_pred, nearest_label, nearest_E = invert_family(fam_dict, E_target)
 
-        if upper:
-            E, label, fam_u, t = upper
-            st.write(f"- Upper: **{label}** ({fam_u}, {t:.1f}%): **{E:.2f} kPa**")
-        else:
-            st.write("- Upper: none")
+    st.subheader("Design output")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric("Chosen family", chosen_fam)
+        st.metric("Predicted thinner (%)", f"{t_star:.2f}")
+    with c2:
+        st.metric("Predicted modulus (kPa)", f"{E_pred:.2f}")
+        st.metric("Nearest measured phantom", f"{nearest_label} ({nearest_E:.2f} kPa)")
 
-with right:
-    st.subheader("Dataset overview")
-    fig = make_plot(phantoms, families)
-    st.pyplot(fig)
-    st.caption("Shaded bands indicate non-validated regions (visual guide).")
+    st.caption("Composition: (A + B) + predicted thinner percentage (by weight of A+B).")
 
-st.markdown("---")
-st.markdown(
-    """
-    **Citation**
+else:
+    st.error("Target is outside validated ranges (gap/out-of-range). No extrapolation performed.")
 
-    If you use this dataset or tool, please cite:  
-    *A. B. Dawood et al., “A Database of Materials for Modeling Human Tissues Across Varying Stiffnesses,”
-    Advanced Healthcare Materials.*
-    """
-)
+    lower, upper = nearest_bounds(ALL_MEASURED, E_target)
 
+    st.subheader("Nearest validated bounds")
+    if lower:
+        E, fam, t, label = lower
+        st.write(f"**Lower:** {label} | {fam} | thinner={t:.1f}% | E={E:.2f} kPa")
+    else:
+        st.write("**Lower:** none (target below minimum measured modulus).")
+
+    if upper:
+        E, fam, t, label = upper
+        st.write(f"**Upper:** {label} | {fam} | thinner={t:.1f}% | E={E:.2f} kPa")
+    else:
+        st.write("**Upper:** none (target above maximum measured modulus).")
+
+st.divider()
+
+with st.expander("Show phantom table used by the app"):
+    st.dataframe(ph_df.sort_values(["family", "thinner_pct"]), use_container_width=True)
