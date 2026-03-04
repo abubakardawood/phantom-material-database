@@ -165,28 +165,63 @@ with left:
 with right:
     st.subheader("Measured vs interpolation")
 
-    # Build plot
     fig, ax = plt.subplots(figsize=(7.5, 5.2))
 
+    # measured points
     t_meas = np.array([p[2] for p in PHANTOMS], dtype=float)
     E_meas = np.array([p[3] for p in PHANTOMS], dtype=float)
-    ax.plot(t_meas, E_meas, "o", label="Measured (phantoms)")
+    ax.plot(t_meas, E_meas, "o", label="Measured (phantoms)", zorder=3)
 
-    # Plot curves
+    # ---- GAP SHADING (updated + correct) ----
+    # Use your updated boundary levels (kPa)
+    levels = sorted([
+        111.09930866645567,  # EF50_12_5T
+        97.25997744487732,   # EF30_0T
+        73.18310906168253,   # EF30_12_5T
+        54.20947752233499    # EF10_0T
+    ])
+
+    # Make sure shading spans the visible plot region:
+    ymin = float(np.min(E_meas))
+    ymax = float(np.max(E_meas))
+    pad = 0.05 * (ymax - ymin)
+    ymin_plot = ymin - pad
+    ymax_plot = ymax + pad
+    ax.set_ylim(ymin_plot, ymax_plot)
+
+    # Shade the *gaps* (inverse of validated bands)
+    # Bands: [ymin, L1], [L1, L2], [L2, L3], [L3, L4], [L4, ymax]
+    # We shade i%2==1 to highlight the "gap" bands (as per your earlier request).
+    bounds = [ymin_plot] + levels + [ymax_plot]
+    for i in range(len(bounds) - 1):
+        if i % 2 == 1:  # highlight gap bands
+            ax.axhspan(bounds[i], bounds[i + 1], alpha=0.10, zorder=0)
+
+    # Dotted reference lines at the four boundaries
+    for y in levels:
+        ax.axhline(y=y, linestyle=":", linewidth=1.2, alpha=0.8, zorder=1)
+
+    # interpolated curves
     for fam in sorted(families.keys()):
         d = families[fam]
         if "interp" not in d:
             continue
         t_fine = np.linspace(d["tmin"], d["tmax"], 300)
-        ax.plot(t_fine, d["interp"](t_fine), label=f"{fam} interpolation")
+        ax.plot(t_fine, d["interp"](t_fine), label=f"{fam} interpolation", zorder=2)
 
-    # (Optional) show target as horizontal line
-    ax.axhline(E_target, linestyle="--", linewidth=1.2)
+    # show target
+    ax.axhline(E_target, linestyle="--", linewidth=1.2, zorder=2)
 
     ax.set_xlabel("Thinner concentration (%)")
     ax.set_ylabel("Elastic modulus (kPa)")
     ax.grid(True, alpha=0.3)
-    ax.legend(loc="best")
-    fig.tight_layout()
 
+    # Add a legend item for shaded gaps (without changing your existing legend too much)
+    gap_patch = Patch(alpha=0.10, label="Non-validated gaps")
+    handles, labels_ = ax.get_legend_handles_labels()
+    handles.append(gap_patch)
+    labels_.append("Non-validated gaps")
+    ax.legend(handles, labels_, loc="best")
+
+    fig.tight_layout()
     st.pyplot(fig, clear_figure=True)
