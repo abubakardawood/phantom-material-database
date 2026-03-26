@@ -129,21 +129,54 @@ HTML = """
     margin-bottom: 10px;
   }
 
-  /* stiffness bar */
-  .stiffness-range-labels {
+  /* stiffness bars — one per condition */
+  .stiffness-scale-labels {
     display: flex; justify-content: space-between;
-    font-size: 11px; color: #888;
-    margin-bottom: 5px; font-family: 'DM Mono', monospace;
+    font-size: 10px; color: #bbb;
+    margin-bottom: 6px; font-family: 'DM Mono', monospace;
+  }
+  .stiffness-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 72px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .stiffness-row-label {
+    font-size: 11px; color: #555;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .stiffness-track {
-    height: 6px; background: #eee; border-radius: 3px;
-    position: relative; margin-bottom: 4px;
+    height: 8px; background: #f0f0f0; border-radius: 4px;
+    position: relative;
   }
-  .stiffness-fill {
-    position: absolute; top: 0; bottom: 0; border-radius: 3px;
-    background: #3b82f6; opacity: 0.65;
+  .stiffness-fill-healthy {
+    position: absolute; top: 0; bottom: 0; border-radius: 4px;
+    background: #16a34a; opacity: 0.7;
   }
-  .stiffness-label { font-size: 10px; color: #bbb; text-align: right; margin-bottom: 14px; }
+  .stiffness-fill-patho {
+    position: absolute; top: 0; bottom: 0; border-radius: 4px;
+    background: #dc2626; opacity: 0.65;
+  }
+  .stiffness-row-val {
+    font-size: 10px; font-family: 'DM Mono', monospace;
+    color: #888; text-align: right;
+  }
+  .stiffness-legend {
+    display: flex; gap: 14px; margin-bottom: 14px; margin-top: 4px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10px; color: #888;
+  }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+  }
+  .legend-dot-healthy { background: #16a34a; opacity: 0.75; }
+  .legend-dot-patho   { background: #dc2626; opacity: 0.7;  }
+  .stiffness-axis-label {
+    font-size: 10px; color: #bbb; text-align: right; margin-bottom: 4px;
+  }
 
   /* literature rows */
   .lit-row {
@@ -370,16 +403,19 @@ HTML = """
         </div>
       </div>
 
-      <!-- stiffness range -->
+      <!-- stiffness range — one bar per condition -->
       <div class="section-title">Stiffness range (literature)</div>
-      <div class="stiffness-range-labels">
-        <span id="e-min">—</span><span id="e-max">—</span>
+      <div class="stiffness-legend">
+        <div class="legend-item">
+          <div class="legend-dot legend-dot-healthy"></div><span>Healthy</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot legend-dot-patho"></div><span>Pathological</span>
+        </div>
       </div>
-      <div class="stiffness-track">
-        <div class="stiffness-fill" id="e-bar"></div>
-      </div>
-      <div class="stiffness-label">Scale: 0 – 160 kPa</div>
-      <div id="lit-rows"></div>
+      <div class="stiffness-scale-labels"><span>0 kPa</span><span>80 kPa</span><span>160 kPa</span></div>
+      <div id="stiffness-bars"></div>
+      <div class="stiffness-axis-label">Scale: 0 – 160 kPa</div>
 
       <div class="section-divider"></div>
 
@@ -498,9 +534,9 @@ const ORGANS = {
     subtitle: 'Central nervous system — grey and white matter',
     eMin: 0.5, eMax: 30,
     litRows: [
-      { k: 'Grey matter (healthy)',  v: '0.5 – 3 kPa',  type: 'healthy' },
-      { k: 'White matter (healthy)', v: '2 – 8 kPa',    type: 'healthy' },
-      { k: 'Glioma (tumour)',        v: '10 – 30 kPa',  type: 'patho'   },
+      { k: 'Grey matter (healthy)',  v: '0.5 – 3 kPa',  type: 'healthy', rMin: 0.5, rMax: 3   },
+      { k: 'White matter (healthy)', v: '2 – 8 kPa',    type: 'healthy', rMin: 2,   rMax: 8   },
+      { k: 'Glioma (tumour)',        v: '10 – 30 kPa',  type: 'patho',   rMin: 10,  rMax: 30  },
     ],
     note: 'Brain tissue is significantly softer than most organs. Only the softest phantom formulations approach this range.',
   },
@@ -509,8 +545,8 @@ const ORGANS = {
     subtitle: 'Myocardium — passive and active states',
     eMin: 10, eMax: 80,
     litRows: [
-      { k: 'Passive myocardium (diastole)', v: '10 – 30 kPa', type: 'healthy' },
-      { k: 'Active myocardium (systole)',   v: '30 – 80 kPa', type: 'healthy' },
+      { k: 'Passive myocardium (diastole)', v: '10 – 30 kPa', type: 'healthy', rMin: 10, rMax: 30 },
+      { k: 'Active myocardium (systole)',   v: '30 – 80 kPa', type: 'healthy', rMin: 30, rMax: 80 },
     ],
   },
   liver: {
@@ -518,9 +554,9 @@ const ORGANS = {
     subtitle: 'Parenchymal tissue — healthy and pathological states',
     eMin: 3, eMax: 120,
     litRows: [
-      { k: 'Healthy liver',                    v: '3 – 8 kPa',    type: 'healthy' },
-      { k: 'Cirrhosis',                        v: '15 – 40 kPa',  type: 'patho'   },
-      { k: 'CCC / HCC / Malignant lymphoma',   v: '40 – 120 kPa', type: 'patho'   },
+      { k: 'Healthy liver',                  v: '3 – 8 kPa',    type: 'healthy', rMin: 3,  rMax: 8   },
+      { k: 'Cirrhosis',                      v: '15 – 40 kPa',  type: 'patho',   rMin: 15, rMax: 40  },
+      { k: 'CCC / HCC / Malignant lymphoma', v: '40 – 120 kPa', type: 'patho',   rMin: 40, rMax: 120 },
     ],
   },
   stomach: {
@@ -528,8 +564,8 @@ const ORGANS = {
     subtitle: 'Gastric wall — healthy and metastatic states',
     eMin: 40, eMax: 120,
     litRows: [
-      { k: 'Healthy gastric wall', v: '40 – 70 kPa',  type: 'healthy' },
-      { k: 'Metastatic tumour',    v: '70 – 120 kPa', type: 'patho'   },
+      { k: 'Healthy gastric wall', v: '40 – 70 kPa',  type: 'healthy', rMin: 40, rMax: 70  },
+      { k: 'Metastatic tumour',    v: '70 – 120 kPa', type: 'patho',   rMin: 70, rMax: 120 },
     ],
   },
   kidney: {
@@ -537,8 +573,8 @@ const ORGANS = {
     subtitle: 'Renal parenchyma — cortex and medulla',
     eMin: 5, eMax: 18,
     litRows: [
-      { k: 'Cortex (healthy)',  v: '5 – 12 kPa', type: 'healthy' },
-      { k: 'Medulla (healthy)', v: '8 – 18 kPa', type: 'healthy' },
+      { k: 'Cortex (healthy)',  v: '5 – 12 kPa', type: 'healthy', rMin: 5, rMax: 12 },
+      { k: 'Medulla (healthy)', v: '8 – 18 kPa', type: 'healthy', rMin: 8, rMax: 18 },
     ],
   },
   prostate: {
@@ -546,8 +582,8 @@ const ORGANS = {
     subtitle: 'Glandular tissue — healthy and cancerous',
     eMin: 20, eMax: 100,
     litRows: [
-      { k: 'Healthy prostate', v: '20 – 45 kPa',  type: 'healthy' },
-      { k: 'Prostate cancer',  v: '45 – 100 kPa', type: 'patho'   },
+      { k: 'Healthy prostate', v: '20 – 45 kPa',  type: 'healthy', rMin: 20, rMax: 45  },
+      { k: 'Prostate cancer',  v: '45 – 100 kPa', type: 'patho',   rMin: 45, rMax: 100 },
     ],
   },
   muscle: {
@@ -555,8 +591,8 @@ const ORGANS = {
     subtitle: 'Passive and active loading — longitudinal axis',
     eMin: 8, eMax: 150,
     litRows: [
-      { k: 'Relaxed (passive)',    v: '8 – 30 kPa',   type: 'healthy' },
-      { k: 'Contracted (active)',  v: '60 – 150 kPa', type: 'healthy' },
+      { k: 'Relaxed (passive)',   v: '8 – 30 kPa',   type: 'healthy', rMin: 8,  rMax: 30  },
+      { k: 'Contracted (active)', v: '60 – 150 kPa', type: 'healthy', rMin: 60, rMax: 150 },
     ],
   },
   adipose: {
@@ -564,8 +600,8 @@ const ORGANS = {
     subtitle: 'Subcutaneous and visceral fat',
     eMin: 2, eMax: 10,
     litRows: [
-      { k: 'Subcutaneous fat', v: '2 – 6 kPa',  type: 'healthy' },
-      { k: 'Visceral fat',     v: '5 – 10 kPa', type: 'healthy' },
+      { k: 'Subcutaneous fat', v: '2 – 6 kPa',  type: 'healthy', rMin: 2, rMax: 6  },
+      { k: 'Visceral fat',     v: '5 – 10 kPa', type: 'healthy', rMin: 5, rMax: 10 },
     ],
   },
 };
@@ -619,26 +655,22 @@ function selectOrgan(key) {
   document.getElementById('organ-subtitle').textContent = organ.subtitle;
   document.getElementById('organ-illus').innerHTML      = ILLUS[key] || '';
 
-  // Stiffness bar
-  const pMin = ((organ.eMin / SCALE_MAX) * 100).toFixed(1);
-  const pWid = Math.max(2, ((organ.eMax - organ.eMin) / SCALE_MAX) * 100).toFixed(1);
-  document.getElementById('e-min').textContent    = organ.eMin + ' kPa';
-  document.getElementById('e-max').textContent    = organ.eMax + ' kPa';
-  document.getElementById('e-bar').style.left     = pMin + '%';
-  document.getElementById('e-bar').style.width    = pWid + '%';
-
-  // Literature rows
-  document.getElementById('lit-rows').innerHTML =
-    organ.litRows.map(r => `
-      <div class="lit-row">
-        <span class="lit-key">${r.k}
-          <span class="badge ${r.type === 'healthy' ? 'badge-healthy' : 'badge-patho'}">
-            ${r.type === 'healthy' ? 'healthy' : 'pathological'}
-          </span>
-        </span>
-        <span class="lit-val">${r.v}</span>
-      </div>`).join('')
-    + (organ.note ? `<p class="note-text">${organ.note}</p>` : '');
+  // Stiffness bars — one per litRow, colour-coded
+  document.getElementById('stiffness-bars').innerHTML =
+    organ.litRows.map(r => {
+      const left  = ((r.rMin / SCALE_MAX) * 100).toFixed(1);
+      const width = Math.max(1, ((r.rMax - r.rMin) / SCALE_MAX) * 100).toFixed(1);
+      const fillClass = r.type === 'healthy' ? 'stiffness-fill-healthy' : 'stiffness-fill-patho';
+      return `
+        <div class="stiffness-row">
+          <div class="stiffness-row-label" title="${r.k}">${r.k}</div>
+          <div class="stiffness-track">
+            <div class="${fillClass}" style="left:${left}%;width:${width}%"></div>
+          </div>
+          <div class="stiffness-row-val">${r.v}</div>
+        </div>`;
+    }).join('')
+    + (organ.note ? `<p class="note-text" style="margin-bottom:10px">${organ.note}</p>` : '');
 
   // Matching phantoms
   const matching = PHANTOMS.filter(p => p.modulus >= organ.eMin && p.modulus <= organ.eMax);
