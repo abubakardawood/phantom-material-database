@@ -178,6 +178,48 @@ HTML = """
     font-size: 10px; color: #bbb; text-align: right; margin-bottom: 4px;
   }
 
+  /* phantom vertical lines on stiffness bars */
+  .phantom-line {
+    position: absolute; top: -4px; bottom: -4px;
+    width: 2px; border-radius: 1px;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .phantom-line:hover { opacity: 1 !important; }
+  .phantom-line-label {
+    position: absolute; top: -18px;
+    transform: translateX(-50%);
+    font-size: 8px; font-family: 'DM Mono', monospace;
+    white-space: nowrap; pointer-events: none;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .phantom-line:hover + .phantom-line-label,
+  .phantom-line-wrap:hover .phantom-line-label { opacity: 1; }
+  .phantom-line-wrap {
+    position: absolute; top: 0; bottom: 0;
+    display: flex; align-items: center;
+  }
+
+  /* phantom legend below bars */
+  .phantom-legend {
+    display: flex; flex-wrap: wrap; gap: 6px 14px;
+    margin-top: 10px; margin-bottom: 4px;
+  }
+  .phantom-legend-item {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10px; color: #555; cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    padding: 3px 7px; border-radius: 4px;
+    border: 1px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .phantom-legend-item:hover { background: #f5f5f5; border-color: #e0e0e0; }
+  .phantom-legend-item.selected-phantom {
+    background: #eff6ff; border-color: #93c5fd;
+  }
+  .phantom-legend-swatch {
+    width: 3px; height: 14px; border-radius: 1px; flex-shrink: 0;
+  }
+
   /* literature rows */
   .lit-row {
     display: flex; justify-content: space-between; align-items: center;
@@ -412,15 +454,20 @@ HTML = """
         <div class="legend-item">
           <div class="legend-dot legend-dot-patho"></div><span>Pathological</span>
         </div>
+        <div class="legend-item">
+          <div style="width:3px;height:12px;border-radius:1px;background:#6366f1;opacity:0.85"></div>
+          <span>Phantom (coloured line)</span>
+        </div>
       </div>
       <div class="stiffness-scale-labels"><span>0 kPa</span><span>80 kPa</span><span>160 kPa</span></div>
       <div id="stiffness-bars"></div>
+      <div class="phantom-legend" id="phantom-legend"></div>
       <div class="stiffness-axis-label">Scale: 0 – 160 kPa</div>
 
       <div class="section-divider"></div>
 
-      <!-- matching phantoms -->
-      <div class="section-title">Matching phantoms</div>
+      <!-- matching phantoms — cards for recipe trigger -->
+      <div class="section-title">Select a phantom for fabrication recipe</div>
       <div class="phantom-grid" id="phantom-grid"></div>
 
       <!-- fabrication recipe (appears on phantom click) -->
@@ -655,31 +702,73 @@ function selectOrgan(key) {
   document.getElementById('organ-subtitle').textContent = organ.subtitle;
   document.getElementById('organ-illus').innerHTML      = ILLUS[key] || '';
 
-  // Stiffness bars — one per litRow, colour-coded
+  // Phantom colour palette — distinct colours for up to 13 phantoms
+  const PHANTOM_COLORS = [
+    '#6366f1','#f59e0b','#10b981','#ef4444','#3b82f6',
+    '#ec4899','#14b8a6','#f97316','#8b5cf6','#84cc16',
+    '#06b6d4','#e11d48','#a16207'
+  ];
+
+  // Matching phantoms for this organ
+  const matching = PHANTOMS.filter(p => p.modulus >= organ.eMin && p.modulus <= organ.eMax);
+
+  // Build a colour map: phantom label → colour
+  const colorMap = {};
+  matching.forEach((p, i) => { colorMap[p.label] = PHANTOM_COLORS[i % PHANTOM_COLORS.length]; });
+
+  // Stiffness bars — one per litRow, with phantom lines overlaid
   document.getElementById('stiffness-bars').innerHTML =
     organ.litRows.map(r => {
-      const left  = ((r.rMin / SCALE_MAX) * 100).toFixed(1);
-      const width = Math.max(1, ((r.rMax - r.rMin) / SCALE_MAX) * 100).toFixed(1);
+      const left      = ((r.rMin / SCALE_MAX) * 100).toFixed(1);
+      const width     = Math.max(1, ((r.rMax - r.rMin) / SCALE_MAX) * 100).toFixed(1);
       const fillClass = r.type === 'healthy' ? 'stiffness-fill-healthy' : 'stiffness-fill-patho';
+
+      // Phantom lines — all phantoms shown on every bar, greyed if outside range
+      const phantomLines = PHANTOMS.map(p => {
+        const pos     = ((p.modulus / SCALE_MAX) * 100).toFixed(2);
+        const inRange = p.modulus >= organ.eMin && p.modulus <= organ.eMax;
+        const color   = inRange ? colorMap[p.label] : '#ccc';
+        const opacity = inRange ? '0.85' : '0.3';
+        return `
+          <div class="phantom-line-wrap" style="left:${pos}%"
+               title="${p.label}: ${p.modulus.toFixed(2)} kPa"
+               onclick="selectPhantom('${p.label}')">
+            <div class="phantom-line"
+                 style="background:${color};opacity:${opacity}"></div>
+          </div>`;
+      }).join('');
+
       return `
         <div class="stiffness-row">
           <div class="stiffness-row-label" title="${r.k}">${r.k}</div>
-          <div class="stiffness-track">
+          <div class="stiffness-track" style="overflow:visible;position:relative">
             <div class="${fillClass}" style="left:${left}%;width:${width}%"></div>
+            ${phantomLines}
           </div>
           <div class="stiffness-row-val">${r.v}</div>
         </div>`;
     }).join('')
     + (organ.note ? `<p class="note-text" style="margin-bottom:10px">${organ.note}</p>` : '');
 
-  // Matching phantoms
-  const matching = PHANTOMS.filter(p => p.modulus >= organ.eMin && p.modulus <= organ.eMax);
+  // Phantom colour legend — only matching phantoms shown
+  document.getElementById('phantom-legend').innerHTML = matching.length === 0
+    ? `<p class="no-phantom">No phantoms fall within this stiffness range.</p>`
+    : matching.map(p => `
+        <div class="phantom-legend-item" id="leg-${p.label}"
+             onclick="selectPhantom('${p.label}')">
+          <div class="phantom-legend-swatch" style="background:${colorMap[p.label]}"></div>
+          ${p.label}
+        </div>`).join('');
+
+  // Phantom cards (for recipe)
   document.getElementById('phantom-grid').innerHTML = matching.length === 0
-    ? `<p class="no-phantom">No phantoms fall within this range.
-         Nearest: EF10_100T (${PHANTOMS[0].modulus} kPa).</p>`
+    ? `<p class="no-phantom">No phantoms fall within this range.</p>`
     : matching.map(p => `
         <div class="phantom-card" id="card-${p.label}" onclick="selectPhantom('${p.label}')">
-          <div class="phantom-label">${p.label}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+            <div style="width:3px;height:14px;border-radius:1px;background:${colorMap[p.label]};flex-shrink:0"></div>
+            <div class="phantom-label">${p.label}</div>
+          </div>
           <div class="phantom-modulus">${p.modulus.toFixed(2)} &plusmn; ${p.sd} kPa</div>
         </div>`).join('');
 
@@ -691,9 +780,11 @@ function selectOrgan(key) {
 // PHANTOM SELECTION
 // ════════════════════════════════════════════════════════
 function selectPhantom(label) {
-  // Keep selected card highlighted
+  // Highlight card and legend item
   document.querySelectorAll('.phantom-card').forEach(c => c.classList.remove('selected'));
+  document.querySelectorAll('.phantom-legend-item').forEach(c => c.classList.remove('selected-phantom'));
   document.getElementById('card-' + label)?.classList.add('selected');
+  document.getElementById('leg-'  + label)?.classList.add('selected-phantom');
 
   const p = PHANTOMS.find(x => x.label === label);
   if (!p) return;
