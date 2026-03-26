@@ -51,8 +51,8 @@ HTML = """
   /* ── Layout ── */
   .app {
     display: grid;
-    grid-template-columns: 280px 1fr;
-    min-height: 620px;
+    grid-template-columns: 340px 1fr;
+    height: 780px;
     border: 1px solid #e5e5e5;
     border-radius: 12px;
     overflow: hidden;
@@ -64,8 +64,9 @@ HTML = """
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 20px 12px;
+    padding: 20px 16px;
     background: #f9f9f8;
+    overflow-y: auto;
   }
 
   .panel-label {
@@ -77,7 +78,7 @@ HTML = """
     align-self: flex-start;
   }
 
-  .body-svg { width: 190px; cursor: default; }
+  .body-svg { width: 260px; cursor: default; }
 
   /* organ hover / active */
   .organ-region { cursor: pointer; }
@@ -85,11 +86,12 @@ HTML = """
   .organ-hit { fill: #fff; opacity: 0; transition: opacity 0.15s; }
   .organ-region.active .organ-hit { opacity: 0.28; }
 
-  /* ── Right panel ── */
+  /* ── Right panel ── scrolls internally so recipe is always reachable */
   .right-panel {
     padding: 24px;
     background: #fff;
-    overflow-y: auto;
+    overflow-y: scroll;
+    height: 100%;
   }
 
   /* empty state */
@@ -682,6 +684,11 @@ function selectPhantom(label) {
     </div>`).join('');
 
   document.getElementById('recipe-box').classList.add('visible');
+
+  // Scroll recipe into view within the right panel
+  setTimeout(() => {
+    document.getElementById('recipe-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, 50);
 }
 </script>
 
@@ -689,4 +696,4 @@ function selectPhantom(label) {
 </html>
 """
 
-components.html(HTML, height=660, scrolling=False)
+components.html(HTML, height=800, scrolling=False)
